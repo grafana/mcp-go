@@ -35,3 +35,4 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 - **Context**: Always accept `context.Context` as first parameter in handlers and long-running functions
 - **Thread safety**: Use `sync.Mutex` for shared state; document thread-safety requirements in comments
 - **JSON**: Use json tags with `omitempty` for optional fields; use `json.RawMessage` for flexible/deferred parsing
+- Security issues should be reported via [Grafana's security issue reporting page](https://grafana.com/legal/report-a-security-issue/) and not directly in this repository.
