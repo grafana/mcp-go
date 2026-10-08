@@ -671,7 +671,8 @@ type Tool struct {
 	RawInputSchema json.RawMessage `json:"-"` // Hide this from JSON marshaling
 	// A JSON Schema object defining the expected output returned by the tool .
 	OutputSchema ToolOutputSchema `json:"outputSchema,omitzero"`
-	// Optional JSON Schema defining expected output structure
+	// Optional JSON Schema defining expected output structure. UnmarshalJSON sets
+	// this instead of OutputSchema when the schema cannot be represented there.
 	RawOutputSchema json.RawMessage `json:"-"` // Hide this from JSON marshaling
 	// Optional properties describing tool behavior
 	Annotations ToolAnnotation `json:"annotations"`
@@ -686,6 +687,46 @@ type Tool struct {
 // GetName returns the name of the tool.
 func (t Tool) GetName() string {
 	return t.Name
+}
+
+// UnmarshalJSON decodes tool metadata and preserves output schemas that cannot
+// be represented by ToolOutputSchema in RawOutputSchema.
+func (t *Tool) UnmarshalJSON(data []byte) error {
+	type toolAlias Tool
+	var decoded struct {
+		toolAlias
+		OutputSchema json.RawMessage `json:"outputSchema"`
+	}
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	schema := bytes.TrimSpace(decoded.OutputSchema)
+	if len(schema) != 0 && !bytes.Equal(schema, []byte("null")) {
+		var fields map[string]json.RawMessage
+		if schema[0] != '{' {
+			if !bytes.Equal(schema, []byte("true")) && !bytes.Equal(schema, []byte("false")) {
+				return fmt.Errorf("tool %s outputSchema must be a JSON Schema object or boolean", decoded.Name)
+			}
+		} else if err := json.Unmarshal(schema, &fields); err != nil {
+			return err
+		}
+		var typed ToolOutputSchema
+		useTyped := json.Unmarshal(schema, &typed) == nil && typed.Type != ""
+		for key := range fields {
+			switch key {
+			case "type", "properties", "required", "additionalProperties", "$defs", "definitions":
+			default:
+				useTyped = false
+			}
+		}
+		if useTyped {
+			decoded.toolAlias.OutputSchema = typed
+		} else {
+			decoded.RawOutputSchema = decoded.OutputSchema
+		}
+	}
+	*t = Tool(decoded.toolAlias)
+	return nil
 }
 
 // MarshalJSON implements the json.Marshaler interface for Tool.
